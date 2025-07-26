@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "537833934344",
+    "project_id": "scopa-4c3c2",
+    "storage_bucket": "scopa-4c3c2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:537833934344:android:c13d0cdf79f65deafb8bbd",
+        "android_client_info": {
+          "package_name": "com.example.scopa"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBhnn2ewjy70H2koV8VHkAlbqFuPeG65Vs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

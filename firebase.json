@@ -1,0 +1,35 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "scopa-4c3c2",
+          "appId": "1:537833934344:android:c13d0cdf79f65deafb8bbd",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "scopa-4c3c2",
+          "configurations": {
+            "android": "1:537833934344:android:c13d0cdf79f65deafb8bbd",
+            "web": "1:537833934344:web:6eacd8d54d946965fb8bbd",
+            "windows": "1:537833934344:web:4d44b572ad6f5693fb8bbd"
+          }
+        }
+      }
+    }
+  },
+  "emulators": {
+    "singleProjectMode": true,
+    "auth": {
+      "port": 9099
+    },
+    "firestore": {
+      "port": 8080
+    },
+    "ui": {
+      "enabled": true
+    }
+  }
+}
