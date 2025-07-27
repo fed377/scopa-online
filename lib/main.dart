@@ -7,6 +7,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:scopa/firebase_options.dart';
 import 'package:scopa/user_state.dart';
+import 'package:scopa/utils.dart';
 
 /// Possible Status:
 /// Empty     - No players, this status only shows in UserState class, NOT IN FIRESTORE
@@ -90,18 +91,23 @@ class _MyHomePageState extends State<MyHomePage> {
   Future<List<dynamic>> get players async => await (await game.get()).data()?['players'];
 
   void joinGame() async {
-    final String? res = await showTextInputDialog(context, 'Input Game Code');
+    final String? res = await showTextInputDialog(context, 'Input Game Code', true);
+
     if (res == null || res.trim() == ' ') {
       showSnackBar(context, "Invalid Code");
       return;
     }
-    dev.log(await joinGameWithCode(res) ?? 'all good');
+
+    //final String? name = await showTextInputDialog(context, 'Input Nickname', false);
+
+    dev.log(await joinGameWithCode(res.trim(), 'nickname') ?? 'all good');
   }
 
-  Future<String?> showTextInputDialog(BuildContext context, String title) async {
+  Future<String?> showTextInputDialog(BuildContext context, String title, bool cancel) async {
     final TextEditingController controller = TextEditingController();
 
     return showDialog<String>(
+      barrierDismissible: cancel,
       context: context,
       builder: (context) {
         return AlertDialog(
@@ -112,10 +118,11 @@ class _MyHomePageState extends State<MyHomePage> {
             autofocus: true,
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(), // cancel
-              child: Text("Cancel"),
-            ),
+            if (cancel)
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(), // cancel
+                child: Text("Cancel"),
+              ),
             ElevatedButton(
               onPressed: () {
                 if (controller.text == '') return;
@@ -130,6 +137,8 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void newGame() async {
+    //final String? name = await showTextInputDialog(context, 'Input Nickname', false);
+
     var ref = await FirebaseFirestore.instance.collection('games').add({
       'players': [uid],
       'hands': {},
@@ -138,6 +147,7 @@ class _MyHomePageState extends State<MyHomePage> {
       'firstPairScore': 0,
       'secondPairScore': 0,
       'round': 0,
+      'nicknames': {uid: 'name'}
     });
     userState.currGame = ref;
     userState.dealer = true;
@@ -189,8 +199,106 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void countScores() async {
-    //TODO: Count score
-    await game.update({'status': 'finished'});
+    var snapshot = await game.get();
+    var data = snapshot.data();
+    List<dynamic> fCards = data!['firstPairCards'];
+    List<dynamic> sCards = data['secondPairCards'];
+    int fDiamonds = fCards.where((a) => a.toString()[0] == '2').toList().length;
+    int sDiamonds = sCards.where((a) => a.toString()[0] == '2').toList().length;
+    int fScope = data['firstPairScope'];
+    int sScope = data['secondPairScope'];
+
+    int fScore = 0;
+    int sScore = 0;
+
+    if (fCards.length > sCards.length) {
+      fScore += 1;
+      dev.log('first got length');
+    } else if (sCards.length > fCards.length) {
+      sScore += 1;
+      dev.log('second got length');
+    }
+
+    if (fDiamonds > sDiamonds) {
+      fScore += 1;
+      dev.log('first got diamonds');
+    } else if (fDiamonds < sDiamonds) {
+      sScore += 1;
+      dev.log('second got diamonds');
+    }
+
+    dev.log('First: $fScope. Second: $sScope');
+
+    fScore += fScope;
+    sScore += sScope;
+
+    if (fCards.contains(27)) {
+      fScore += 1;
+      dev.log('first got 7');
+    } else {
+      sScore += 1;
+      dev.log('second got 7');
+    }
+
+    if (fCards.contains(21) && fCards.contains(22) && fCards.contains(23)) {
+      int score = 3;
+      while (score < 10) {
+        if (fCards.contains(score + 20)) {
+          score += 1;
+        } else {
+          break;
+        }
+      }
+      if (score == 10) {
+        if (fCards.contains(20)) score += 1;
+      }
+      fScore += score;
+    } else if (sCards.contains(21) && sCards.contains(22) && sCards.contains(23)) {
+      int score = 3;
+      while (score < 10) {
+        if (sCards.contains(score + 20)) {
+          score += 1;
+        } else {
+          break;
+        }
+      }
+      if (score == 10) {
+        if (sCards.contains(20)) score += 1;
+      }
+      sScore += score;
+    }
+
+    int fPrimiera = countPrimieraPoints(fCards);
+    int sPrimiera = countPrimieraPoints(sCards);
+
+    if (fPrimiera > sPrimiera) {
+      fScore += 1;
+      dev.log('first got primiera');
+    } else if (fPrimiera < sPrimiera) {
+      sScore += 1;
+      dev.log('second got primiera');
+    }
+
+    await game.update({
+      'status': 'finished',
+      'firstPairScore': FieldValue.increment(fScore),
+      'secondPairScore': FieldValue.increment(sScore),
+    });
+  }
+
+  int checkPrimieraSeed(List<dynamic> cards, int seed) {
+    cards = cards..removeWhere((a) => a.toString()[0] != seed.toString());
+    if (cards.isEmpty) {
+      return 0;
+    } else {
+      cards = cards.map(getPrimieraPoints).toList();
+      cards.sort();
+      return cards.last;
+    }
+  }
+
+  int countPrimieraPoints(List<dynamic> cards) {
+    return [1, 2, 3, 4].fold(0, (value, element) => value + checkPrimieraSeed(cards, element));
   }
 
   Future<void> dealCards() async {
@@ -219,6 +327,17 @@ class _MyHomePageState extends State<MyHomePage> {
     return Scaffold(
       body: Stack(
         children: [
+          SizedBox.expand(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomLeft,
+                  end: Alignment.topRight,
+                  colors: [const Color.fromARGB(255, 38, 86, 40), const Color.fromARGB(255, 55, 135, 58)],
+                ),
+              ),
+            ),
+          ),
           if (userState.status != 'empty') Align(alignment: Alignment.topRight, child: Text(userState.pair)),
           if (FirebaseAuth.instance.currentUser != null)
             Align(
@@ -239,64 +358,71 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  Widget buildFinishedMenu() => ElevatedButton(
-      onPressed: () async {
-        await game.update({'round': FieldValue.increment(1)});
-        startGame();
-      },
-      child: Text('Restart game'));
-
-  String getSeed(int n) {
-    switch (n) {
-      case 1:
-        return "hearts";
-      case 2:
-        return "diamonds";
-      case 3:
-        return "clubs";
-      default:
-        return "spades";
-    }
-  }
-
-  String getCardFileName(String card) {
-    return '${int.parse(card[1])}_of_${getSeed(int.parse(card[0]))}.png';
+  Widget buildFinishedMenu() {
+    return StreamBuilder<DocumentSnapshot>(
+        stream: game.snapshots(),
+        builder: (context, snapshot) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: pad([
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: pad([
+                  Text('Your Score: ${snapshot.data!['${userState.pair}Score']}'),
+                  Text("Opponents' Score: ${snapshot.data!['${userState.oppositePair}Score']}"),
+                ]),
+              ),
+              ElevatedButton(
+                  onPressed: () async {
+                    await game.update({'round': FieldValue.increment(1)});
+                    startGame();
+                  },
+                  child: Text('Restart game')),
+            ]),
+          );
+        });
   }
 
   Widget buildPlayingMenu() {
     return Stack(
       children: [
         Align(alignment: Alignment.bottomCenter, child: buildHand()),
-        Align(alignment: Alignment.center, child: buildBoard()),
+        Align(alignment: Alignment.center, child: buildBoardCards()),
         Align(alignment: Alignment.center, child: buildOpponentHands()),
         Align(alignment: Alignment.bottomRight, child: buildScoreBoard()),
       ],
     );
   }
 
+  List<Widget> pad(List<Widget> widgets, {double padding = 8}) {
+    return widgets.map((a) => Padding(padding: EdgeInsets.all(padding), child: a)).toList();
+  }
+
   Widget buildScoreBoard() {
     return Card(
       margin: EdgeInsets.all(8.0),
+      color: Colors.lightGreen.shade800,
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: Row(
           mainAxisSize: MainAxisSize.min,
-          children: [
+          children: pad([
             Column(
               mainAxisSize: MainAxisSize.min,
-              children: [Text('Cards'), Text(userState.cardsGained.toString())],
+              children: pad([Text('Cards'), Text(userState.cardsGained.toString())]),
             ),
             Column(
               mainAxisSize: MainAxisSize.min,
-              children: [Text('Scope'), Text(userState.scope.toString())],
+              children: pad([Text('Scope'), Text(userState.scope.toString())]),
             )
-          ],
+          ]),
         ),
       ),
     );
   }
 
-  Widget buildHandCard(String num, {double size = 100}) {
+  Widget buildHandCard(String num, void Function(String) playCard, {double size = 100}) {
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: SizedBox(
@@ -389,7 +515,7 @@ class _MyHomePageState extends State<MyHomePage> {
     nextTurn();
   }
 
-  Future<String?> joinGameWithCode(String code) async {
+  Future<String?> joinGameWithCode(String code, String nickname) async {
     final firestore = FirebaseFirestore.instance;
     final query = await firestore.collection('games').doc(code).get();
 
@@ -411,7 +537,8 @@ class _MyHomePageState extends State<MyHomePage> {
     }
 
     await gameDoc.update({
-      'players': FieldValue.arrayUnion([uid])
+      'players': FieldValue.arrayUnion([uid]),
+      'nicknames.$uid': nickname,
     });
 
     gameDoc.snapshots().listen(listener);
@@ -420,58 +547,75 @@ class _MyHomePageState extends State<MyHomePage> {
     userState.turnKey = players.length;
     userState.dealer = false;
     userState.pair = userState.turnKey % 2 == 0 ? 'secondPair' : 'firstPair';
-    setState(() {
-      userState.status = 'waiting';
-    });
+    setState(() => userState.status = 'waiting');
 
     return null;
   }
 
-  void checkGameOver(List<dynamic> board) {
-    //TODO: Implement by checking total length of taken cards (including scope)
-  }
-
   Widget buildOpponentHands() {
-    return StreamBuilder<DocumentSnapshot>(
-      stream: game.snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return CircularProgressIndicator();
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: StreamBuilder<DocumentSnapshot>(
+        stream: game.snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) return CircularProgressIndicator();
 
-        final data = snapshot.data!.data() as Map<String, dynamic>;
-        final hands = data['hands'] as Map<String, dynamic>;
-        int x = 1;
-        String nextPlayerId = data['players'][(userState.turnKey + x) % 4];
-        List<dynamic> nextPlayerHand = hands[nextPlayerId];
+          final data = snapshot.data!.data() as Map<String, dynamic>;
+          final hands = data['hands'] as Map<String, dynamic>;
+          int x = 1;
+          String nextPlayerId = data['players'][(userState.turnKey + x) % 4];
+          List<dynamic> nextPlayerHand = hands[nextPlayerId];
+          String playerName = data['nicknames'][nextPlayerId];
 
-        void incrementId() {
-          x += 1;
-          nextPlayerId = data['players'][(userState.turnKey + x) % 4];
-          nextPlayerHand = hands[nextPlayerId];
-        }
+          void incrementId() {
+            x += 1;
+            nextPlayerId = data['players'][(userState.turnKey + x) % 4];
+            nextPlayerHand = hands[nextPlayerId];
+            playerName = data['nicknames'][nextPlayerId];
+          }
 
-        final int left = nextPlayerHand.length;
-        incrementId();
-        final top = nextPlayerHand.length;
-        incrementId();
-        final right = nextPlayerHand.length;
+          final left = nextPlayerHand.length;
+          final leftName = playerName;
+          incrementId();
+          final top = nextPlayerHand.length;
+          final topName = playerName;
+          incrementId();
+          final right = nextPlayerHand.length;
+          final rightName = playerName;
 
-        Widget c(int l, int t, AlignmentGeometry a) => Align(
-              alignment: a,
-              child: Flex(
-                direction: t % 2 == 0 ? Axis.horizontal : Axis.vertical,
-                mainAxisSize: MainAxisSize.min,
-                children: List.generate(l, (n) => buildBackCard(t)),
-              ),
-            );
+          Widget c(int l, int t, AlignmentGeometry a, String n) => Align(
+                alignment: a,
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color.fromARGB(255, 32, 106, 0), width: 5),
+                    borderRadius: BorderRadius.circular(8),
+                    gradient: LinearGradient(
+                        colors: [const Color.fromARGB(255, 39, 93, 41), const Color.fromARGB(255, 41, 109, 43)]),
+                  ),
+                  child: Flex(
+                    mainAxisSize: MainAxisSize.min,
+                    direction: t % 2 != 0 ? Axis.horizontal : Axis.vertical,
+                    children: [
+                      RotatedBox(quarterTurns: t, child: Text(n)),
+                      Flex(
+                        direction: t % 2 == 0 ? Axis.horizontal : Axis.vertical,
+                        mainAxisSize: MainAxisSize.min,
+                        children: List.generate(l, (n) => buildBackCard(t)),
+                      )
+                    ],
+                  ),
+                ),
+              );
 
-        return Stack(
-          children: [
-            c(left, 1, Alignment.centerLeft),
-            c(top, 2, Alignment.topCenter),
-            c(right, 3, Alignment.centerRight),
-          ],
-        );
-      },
+          return Stack(
+            children: pad([
+              c(left, 1, Alignment.centerLeft, leftName),
+              c(top, 2, Alignment.topCenter, topName),
+              c(right, 3, Alignment.centerRight, rightName),
+            ]),
+          );
+        },
+      ),
     );
   }
 
@@ -490,7 +634,7 @@ class _MyHomePageState extends State<MyHomePage> {
             padding: const EdgeInsets.all(8.0),
             child: Row(
               mainAxisSize: MainAxisSize.min,
-              children: myHand.map(buildHandCard).toList(),
+              children: myHand.map((n) => buildHandCard(n, playCard)).toList(),
             ),
           ),
         );
@@ -498,7 +642,7 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  Widget buildBoard() {
+  Widget buildBoardCards() {
     return StreamBuilder<DocumentSnapshot>(
       stream: game.snapshots(),
       builder: (context, snapshot) {
@@ -528,10 +672,15 @@ class _MyHomePageState extends State<MyHomePage> {
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        children: [
+        children: pad([
+          Text(
+            'Online Scopa',
+            style: TextStyle(fontFamily: 'Serif', fontSize: 25),
+          ),
+          const SizedBox(height: 200),
           ElevatedButton(onPressed: joinGame, child: Text("Join Game")),
           ElevatedButton(onPressed: newGame, child: Text("New Game")),
-        ],
+        ]),
       ),
     );
   }

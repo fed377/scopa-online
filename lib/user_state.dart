@@ -8,6 +8,7 @@ class UserState {
   int turn = 0;
   late int turnKey;
   late String pair;
+  get oppositePair => pair == 'firstPair' ? 'secondPair' : 'firstPair';
   int cardsGained = 0;
   int scope = 0;
   int round = 0;
