@@ -29,3 +29,12 @@ const Map<int, int> _scoring = {
 };
 
 int getPrimieraPoints(cardNum) => _scoring[cardNum] ?? 0;
+
+String getSeedImage(String cardNum) => _seedIcons[int.parse(cardNum[0])] ?? '';
+
+const Map<int, String> _seedIcons = {
+  1: 'Heart_red.png',
+  2: 'Diamond_red.png',
+  3: 'Club_black.png',
+  4: 'Spade_black.png',
+};
