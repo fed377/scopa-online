@@ -1,18 +1,26 @@
 import 'dart:async';
 import 'dart:developer' as dev;
+import 'dart:html' as html;
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:scopa/board_cards.dart';
+import 'package:scopa/finished_menu.dart';
 import 'package:scopa/firebase_options.dart';
+import 'package:scopa/hand.dart';
+import 'package:scopa/hand_card.dart';
+import 'package:scopa/opponent_hands.dart';
+import 'package:scopa/score_board.dart';
+import 'package:scopa/taken_cards.dart';
 import 'package:scopa/user_state.dart';
 import 'package:scopa/utils.dart';
 
-const testing = true;
+const testing = !kReleaseMode; // Set to true for testing purposes, false in production
 
 /// Possible Status:
 /// Empty     - No players, this status only shows in UserState class, NOT IN FIRESTORE
@@ -57,9 +65,7 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  Future<void> signInAnonymously() async {
-    await FirebaseAuth.instance.signInAnonymously();
-  }
+  Future<void> signInAnonymously() async => await FirebaseAuth.instance.signInAnonymously();
 
   final List<String> deck = [
     for (int suit = 1; suit <= 4; suit++)
@@ -84,6 +90,17 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   void initState() {
+    html.window.onBeforeUnload.listen((event) {
+      if (userState.status != 'finished' && userState.status != 'empty') {
+        if (event is html.BeforeUnloadEvent) {}
+        userState.status = 'abandoned';
+        userState.currGame.update({
+          'status': 'abandoned',
+          'players': FieldValue.arrayRemove([userState.uid]),
+        });
+      }
+    });
+
     super.initState();
   }
 
@@ -95,8 +112,6 @@ class _MyHomePageState extends State<MyHomePage> {
   Future<List<String>> get myHand async => (await hands)[uid];
   set status(String s) => game.update({'status': s});
   Future<List<dynamic>> get players async => await (await game.get()).data()?['players'];
-
-  final double cardSize = 50;
 
   StreamSubscription? streamSub;
 
@@ -123,6 +138,7 @@ class _MyHomePageState extends State<MyHomePage> {
         return AlertDialog(
           title: Text(title),
           content: TextField(
+            maxLength: 20,
             controller: controller,
             decoration: InputDecoration(hintText: "Enter text here"),
             autofocus: true,
@@ -239,8 +255,6 @@ class _MyHomePageState extends State<MyHomePage> {
       sScore += 1;
     }
 
-    dev.log('First: $fScope. Second: $sScope');
-
     fScore += fScope;
     sScore += sScope;
 
@@ -283,10 +297,8 @@ class _MyHomePageState extends State<MyHomePage> {
 
     if (fPrimiera > sPrimiera) {
       fScore += 1;
-      dev.log('first got primiera');
     } else if (fPrimiera < sPrimiera) {
       sScore += 1;
-      dev.log('second got primiera');
     }
 
     await game.update({
@@ -325,8 +337,10 @@ class _MyHomePageState extends State<MyHomePage> {
         'status': 'playing',
         'firstPairCards': [],
         'firstPairScope': 0,
+        'firstPairScopeCards': [],
         'secondPairCards': [],
         'secondPairScope': 0,
+        'secondPairScopeCards': [],
         'board': []
       },
     );
@@ -338,7 +352,7 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     if (!initialized) {
       initialize();
-      return CircularProgressIndicator();
+      return Center(child: CircularProgressIndicator());
     }
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!first) {
@@ -358,11 +372,12 @@ class _MyHomePageState extends State<MyHomePage> {
           switch (userState.status) {
             'empty' => buildStartMenu(),
             'waiting' => buildWaitingMenu(),
-            'dealing' => buildDealingMenu(),
+            'dealing' => Center(child: CircularProgressIndicator()),
             'playing' => buildPlayingMenu(),
             'abandoned' => Center(child: Text('Game abandoned by a player')),
             'counting' => Center(child: Text('Score is being counted')),
-            'finished' => buildFinishedMenu(),
+            'finished' =>
+              FinishedMenu(data: game.snapshots(), p: userState.pair, op: userState.oppositePair, cb: restartGame),
             String() => Text('Unexpected game state: ${userState.status}'),
           },
         ],
@@ -370,237 +385,71 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  Widget buildFinishedMenu() {
-    return StreamBuilder<DocumentSnapshot>(
-        stream: game.snapshots(),
-        builder: (context, snapshot) {
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: pad([
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: pad([
-                  Text('Your Score: ${snapshot.data!['${userState.pair}Score']}'),
-                  Text("Opponents' Score: ${snapshot.data!['${userState.oppositePair}Score']}"),
-                ]),
-              ),
-              ElevatedButton(
-                  onPressed: () async {
-                    await game.update({'round': FieldValue.increment(1)});
-                    startGame();
-                  },
-                  child: Text('Restart game')),
-            ]),
-          );
-        });
+  void restartGame() async {
+    await game.update({'round': FieldValue.increment(1)});
+    startGame();
   }
 
   Widget buildPlayingMenu() {
     return Stack(
       children: [
-        Align(alignment: Alignment.bottomCenter, child: buildHand()),
-        Align(alignment: Alignment.center, child: buildBoardCards()),
-        Align(alignment: Alignment.center, child: buildOpponentHands()),
-        Align(alignment: Alignment.bottomRight, child: buildScoreBoard()),
+        Align(
+          alignment: Alignment.center,
+          child: buildPlayBoard(),
+        ),
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: Hand(userState: userState, snapshot: game.snapshots(), cardSize: cardSize, playCard: playCard),
+        ),
+        Align(
+            alignment: Alignment.center,
+            child: BoardCards(
+              disappearingCards: disappearingCards,
+              cardAnimDuration: cardAnimDuration,
+              snapshot: game.snapshots(),
+            )),
+        Align(
+          alignment: Alignment.center,
+          child: buildOpponentHands(),
+        ),
+        TakenCards(
+          snapshot: game.snapshots(),
+          pair: userState.pair,
+          oppositePair: userState.oppositePair,
+          cardSize: cardSize,
+        ),
       ],
     );
   }
 
-  List<Widget> pad(List<Widget> widgets, {double padding = 8}) {
-    return widgets.map((a) => Padding(padding: EdgeInsets.all(padding), child: a)).toList();
+  Widget buildPlayBoard() {
+    return Padding(
+      padding: EdgeInsets.all(200),
+      child: SizedBox.expand(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color.fromARGB(221, 27, 27, 27),
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(color: Colors.white, width: 2),
+          ),
+        ),
+      ),
+    );
   }
 
   bool scoreHover = false;
 
-  Widget buildScoreBoard() {
-    return Padding(
-      padding: const EdgeInsets.all(26.0),
-      child: MouseRegion(
-        onEnter: (_) => setState(() => scoreHover = true),
-        onExit: (_) => setState(() => scoreHover = false),
-        child: AnimatedContainer(
-          curve: Curves.easeOutQuad,
-          height: scoreHover ? 120 : 100,
-          width: scoreHover ? 240 : 200,
-          duration: Durations.short4,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(color: Color.fromARGB(scoreHover ? 120 : 47, 255, 255, 255), blurRadius: scoreHover ? 20 : 10)
-            ],
-            borderRadius: BorderRadius.circular(scoreHover ? 30 : 20),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: pad([Text('Cards'), Text(userState.cardsGained.toString())]),
-                ),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: pad([Text('Scope'), Text(userState.scope.toString())]),
-                )
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Map<String, bool> hovering = {};
-
-  Widget buildOpponentCard() {
-    return Container(
-      padding: const EdgeInsets.all(8.0),
-      height: 100,
-      width: 73,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-            colors: [Colors.white, const Color.fromARGB(255, 231, 231, 231)],
-            begin: Alignment.bottomLeft,
-            end: Alignment.topRight),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: const Color.fromARGB(90, 0, 0, 0), blurRadius: 20)],
-      ),
-      child: Stack(
-        children: [
-          Container(
-              decoration: BoxDecoration(boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withAlpha(20),
-                  blurRadius: 30,
-                  spreadRadius: -100,
-                )
-              ]),
-              child: Align(
-                  alignment: Alignment.center, child: Image(height: 100, image: AssetImage('assets/back_card.png')))),
-        ],
-      ),
-    );
-  }
-
-  Widget buildHandCard(String num, void Function(String) playCard) {
-    Color color = num[0] == '1' || num[0] == '2' ? Colors.red : Colors.black;
-    bool hover = hovering[num] ?? false;
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: MouseRegion(
-        onEnter: (_) => setState(() => hovering[num] = true),
-        onExit: (_) => setState(() => hovering[num] = false),
-        child: GestureDetector(
-          onTap: () => playCard(num),
-          child: AnimatedContainer(
-            duration: Durations.long3,
-            curve: Curves.easeOutCirc,
-            height: hover ? 125 : 100,
-            width: hover ? 100 : 73,
-            transform: Matrix4.identity()..translate(0, hover ? -cardSize : 0),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                  colors: [Colors.white, const Color.fromARGB(255, 231, 231, 231)],
-                  begin: Alignment.bottomLeft,
-                  end: Alignment.topRight),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [BoxShadow(color: const Color.fromARGB(90, 0, 0, 0), blurRadius: 20)],
-            ),
-            child: Stack(
-              children: [
-                Container(
-                    decoration: BoxDecoration(boxShadow: [
-                      BoxShadow(
-                        color: color.withAlpha(20),
-                        blurRadius: 30,
-                        spreadRadius: -100,
-                      )
-                    ]),
-                    child: Align(
-                        alignment: Alignment.center, child: Image(height: 40, image: AssetImage(getSeedImage(num))))),
-                Align(
-                  alignment: Alignment.topLeft,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 6, 8, 8),
-                    child: Text(
-                      getCardNum(num[1]),
-                      style: GoogleFonts.varelaRound(color: color, fontSize: 25, fontWeight: FontWeight.w900),
-                    ),
-                  ),
-                )
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  String getCardNum(String a) => switch (a) {
-        '0' => 'K',
-        '8' => 'J',
-        '9' => 'Q',
-        '1' => ' ',
-        String() => a,
-      };
-
-  Widget buildBackCard(int turns) => Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: RotatedBox(
-            quarterTurns: turns, child: SizedBox(height: 50, child: Image(image: AssetImage('assets/back_card.png')))),
-      );
-
-  Widget buildBoardCard(dynamic num) {
-    Color color = num[0] == '1' || num[0] == '2' ? Colors.red : Colors.black;
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: Container(
-        height: 100,
-        width: 73,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-              colors: [Colors.white, const Color.fromARGB(255, 231, 231, 231)],
-              begin: Alignment.bottomLeft,
-              end: Alignment.topRight),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: const Color.fromARGB(90, 0, 0, 0), blurRadius: 20)],
-        ),
-        child: Stack(
-          children: [
-            Container(
-                decoration: BoxDecoration(boxShadow: [
-                  BoxShadow(
-                    color: color.withAlpha(20),
-                    blurRadius: 30,
-                    spreadRadius: -100,
-                  )
-                ]),
-                child:
-                    Align(alignment: Alignment.center, child: Image(height: 40, image: AssetImage(getSeedImage(num))))),
-            Align(
-              alignment: Alignment.topLeft,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 6, 8, 8),
-                child: Text(
-                  getCardNum(num[1]),
-                  style: GoogleFonts.varelaRound(color: color, fontSize: 25, fontWeight: FontWeight.w900),
-                ),
-              ),
-            )
-          ],
-        ),
-      ),
-    );
-  }
 
   void nextTurn() async => await game.update({'turn': ((await game.get()).data()!['turn'] + 1) % 4});
 
-  void checkScopa() async {
+  void checkScopa(String cardPlayed) async {
     final cards = await board;
     if (cards.isEmpty) {
-      await game.update({'${userState.pair}Scope': FieldValue.increment(1)});
+      await game.update({
+        '${userState.pair}Scope': FieldValue.increment(1),
+        '${userState.pair}ScopeCards': FieldValue.arrayUnion([cardPlayed]),
+      });
     }
   }
 
@@ -645,8 +494,8 @@ class _MyHomePageState extends State<MyHomePage> {
             '${userState.pair}Cards': FieldValue.arrayUnion([c, card]),
           });
           if (!testing) nextTurn();
+          checkScopa(card);
         });
-        checkScopa();
         return;
       }
     }
@@ -666,9 +515,8 @@ class _MyHomePageState extends State<MyHomePage> {
                 '${userState.pair}Cards': FieldValue.arrayUnion([x, c, card]),
               });
               if (!testing) nextTurn();
-              dev.log('sum take');
+              checkScopa(card);
             });
-            checkScopa();
             return;
           }
         }
@@ -717,152 +565,10 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget buildOpponentHands() {
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: StreamBuilder<DocumentSnapshot>(
-        stream: game.snapshots(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) return CircularProgressIndicator();
-
-          final data = snapshot.data!.data() as Map<String, dynamic>;
-          final hands = data['hands'] as Map<String, dynamic>;
-          int x = 1;
-          String nextPlayerId = data['players'][(userState.turnKey + x) % 4];
-          List<dynamic> nextPlayerHand = hands[nextPlayerId];
-          String playerName = data['nicknames'][nextPlayerId];
-
-          void incrementId() {
-            x += 1;
-            nextPlayerId = data['players'][(userState.turnKey + x) % 4];
-            nextPlayerHand = hands[nextPlayerId];
-            playerName = data['nicknames'][nextPlayerId];
-          }
-
-          final left = nextPlayerHand.length;
-          final leftName = playerName;
-          incrementId();
-          final top = nextPlayerHand.length;
-          final topName = playerName;
-          incrementId();
-          final right = nextPlayerHand.length;
-          final rightName = playerName;
-
-          Widget c(int l, int t, AlignmentGeometry a, String n) {
-            final fullWidth = cardSize * (l + 1);
-
-            return Align(
-              alignment: a,
-              child: RotatedBox(
-                quarterTurns: t,
-                child: Container(
-                  width: fullWidth,
-                  height: 200,
-                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
-                  margin: const EdgeInsets.all(8.0),
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: Stack(
-                      children: List.generate(
-                        l,
-                        (x) => AnimatedPositioned(
-                          duration: Durations.short4,
-                          bottom: 10,
-                          left: x * cardSize,
-                          child: buildOpponentCard(),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            );
-          }
-
-          return Stack(
-            children: pad([
-              c(left, 1, Alignment.centerLeft, leftName),
-              c(top, 2, Alignment.topCenter, topName),
-              c(right, 3, Alignment.centerRight, rightName),
-            ]),
-          );
-        },
-      ),
-    );
+    return OpponentHands(game: game, userState: userState, cardSize: cardSize);
   }
 
-  Widget buildHand() {
-    return StreamBuilder<DocumentSnapshot>(
-      stream: game.snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return CircularProgressIndicator();
-        final data = snapshot.data!.data() as Map<String, dynamic>;
-        final hands = data['hands'] as Map<String, dynamic>;
-        final myHand = List<String>.from(hands[userState.uid] ?? []);
-        final midPosition = MediaQuery.sizeOf(context).width / 2;
-        final startPos = midPosition - (myHand.length / 2) * cardSize;
-
-        return Container(
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
-          margin: const EdgeInsets.all(8.0),
-          child: Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Stack(
-              children: List.generate(
-                myHand.length,
-                (x) => AnimatedPositioned(
-                  duration: Durations.short4,
-                  bottom: 10,
-                  left: startPos + x * cardSize,
-                  child: buildHandCard(myHand[x], playCard),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget buildBoardCards() {
-    return StreamBuilder<DocumentSnapshot>(
-      stream: game.snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return CircularProgressIndicator();
-        final data = snapshot.data!.data() as Map<String, dynamic>;
-        final hands = data['board'] as List<dynamic>;
-
-        int rows = (hands.length / 3).ceil();
-        int columns = min(hands.length, 3);
-        var size = MediaQuery.sizeOf(context);
-        double midY = size.height / 2;
-        double midX = size.width / 2;
-        final double cardHeight = 120;
-        final double cardWidth = 87.6;
-        double startY = midY - ((cardHeight * rows) / 2.0);
-        double startX = midX - ((cardWidth * columns) / 2.0);
-
-        return SizedBox.expand(
-          child: Stack(
-              children: List.generate(hands.length, (index) {
-            final card = hands[index];
-            int column = index % 3;
-            int row = ((index - column) / 3) as int;
-            bool contains = disappearingCards.contains(card);
-            return AnimatedPositioned(
-                curve: Curves.easeInOut,
-                duration: contains ? cardAnimDuration : Durations.short4,
-                top: contains ? (2 * midY) : startY + cardHeight * row,
-                left: contains ? (2 * midX) : startX + cardWidth * column,
-                child: buildBoardCard(card));
-          })),
-        );
-      },
-    );
-  }
-
-  Widget buildDealingMenu() {
-    return Center(child: CircularProgressIndicator());
-  }
+  final double cardSize = 50;
 
   Widget buildStartMenu() {
     return Center(
@@ -870,7 +576,7 @@ class _MyHomePageState extends State<MyHomePage> {
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: pad([
-          buildHandCard('23', (_) {}),
+          HandCard('23', (_) {}, 150),
           Text(
             'Online Scopa',
             style: TextStyle(fontFamily: 'Serif', fontSize: 25),
@@ -907,7 +613,7 @@ class _MyHomePageState extends State<MyHomePage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: pad([
-              buildHandCard('23', (_) {}),
+              HandCard('23', (_) {}, 150),
               Text(
                 'Online Scopa',
                 style: TextStyle(fontFamily: 'Serif', fontSize: 25),
@@ -923,5 +629,11 @@ class _MyHomePageState extends State<MyHomePage> {
         ),
       ],
     ));
+  }
+
+  @override
+  void dispose() {
+    streamSub?.cancel();
+    super.dispose();
   }
 }
