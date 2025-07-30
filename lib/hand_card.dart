@@ -26,7 +26,7 @@ class _HandCardState extends State<HandCard> {
         child: GestureDetector(
           onTap: () => widget.playCard(widget.num),
           child: AnimatedContainer(
-            duration: Durations.short3,
+            duration: Durations.long1,
             curve: Curves.easeOutCirc,
             height: hover ? 125 : 100,
             width: hover ? 100 : 73,
@@ -37,21 +37,19 @@ class _HandCardState extends State<HandCard> {
                   begin: Alignment.bottomLeft,
                   end: Alignment.topRight),
               borderRadius: BorderRadius.circular(20),
-              boxShadow: [BoxShadow(color: const Color.fromARGB(90, 0, 0, 0), blurRadius: 20)],
+              boxShadow: [BoxShadow(color: const Color.fromARGB(90, 0, 0, 0), blurRadius: hover ? 60 : 20)],
             ),
             child: Stack(
               children: [
                 Container(
                     decoration: BoxDecoration(boxShadow: [
                       BoxShadow(
-                        color: color.withAlpha(20),
+                        color: color.withAlpha(hover ? 30 : 20),
                         blurRadius: 30,
-                        spreadRadius: -100,
                       )
                     ]),
-                    child: Align(
-                        alignment: Alignment.center,
-                        child: Image(height: 40, image: AssetImage(getSeedImage(widget.num))))),
+                    child:
+                        Align(alignment: Alignment.center, child: Image.asset(getSuitImage(widget.num), height: 40))),
                 Align(
                   alignment: Alignment.topLeft,
                   child: Padding(

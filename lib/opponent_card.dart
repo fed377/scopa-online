@@ -30,7 +30,7 @@ class OpponentCard extends StatelessWidget {
                 )
               ]),
               child: Align(
-                  alignment: Alignment.center, child: Image(height: 100, image: AssetImage('assets/back_card.png')))),
+                  alignment: Alignment.center, child: Image.asset('assets/back_card.png', height: 100))),
         ],
       ),
     );

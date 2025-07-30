@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:scopa/board_card.dart';
@@ -10,11 +11,15 @@ class BoardCards extends StatelessWidget {
     required this.disappearingCards,
     required this.cardAnimDuration,
     required this.snapshot,
+    required this.turnKey,
+    required this.round,
   });
 
   final List<String> disappearingCards;
   final Duration cardAnimDuration;
   final Stream<DocumentSnapshot<Map<String, dynamic>>> snapshot;
+  final int turnKey;
+  final int round;
 
   @override
   Widget build(BuildContext context) {
@@ -41,12 +46,13 @@ class BoardCards extends StatelessWidget {
             final card = hands[index];
             int column = index % 3;
             int row = ((index - column) ~/ 3);
-            bool contains = disappearingCards.contains(card);
+            bool contains = data['disappearingCards'].contains(card);
+            bool ourCards = ((data['turn'] as int) - turnKey + round) % 2 == 0;
             return AnimatedPositioned(
                 curve: Curves.easeInOut,
                 duration: contains ? cardAnimDuration : Durations.short4,
-                top: contains ? (2 * midY) - 26 - cardHeight : startY + cardHeight * row,
-                left: contains ? (2 * midX) - 56 - cardWidth : startX + cardWidth * column,
+                top: contains ? (!ourCards ? (2 * midY) - 26 - cardHeight : 0) : startY + cardHeight * row,
+                left: contains ? (!ourCards ? (2 * midX) - 56 - cardWidth : 0) : startX + cardWidth * column,
                 child: BoardCard(num: card));
           })),
         );

@@ -33,8 +33,7 @@ class BoardCard extends StatelessWidget {
                     spreadRadius: -100,
                   )
                 ]),
-                child:
-                    Align(alignment: Alignment.center, child: Image(height: 40, image: AssetImage(getSeedImage(num))))),
+                child: Align(alignment: Alignment.center, child: Image.asset(getSuitImage(num), height: 40))),
             Align(
               alignment: Alignment.topLeft,
               child: Padding(

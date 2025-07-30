@@ -12,6 +12,6 @@ class UserState {
   int cardsGained = 0;
   int scope = 0;
   int round = 0;
-  int get playKey => (turnKey + round) % 4;
+  int get playKey => (turnKey - round) % 4;
   UserState(this.dealer, this.status);
 }

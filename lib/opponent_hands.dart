@@ -99,6 +99,15 @@ class OpponentHands extends StatelessWidget {
               c(left, 1, Alignment.centerLeft, leftName),
               c(top, 2, Alignment.topCenter, topName),
               c(right, 3, Alignment.centerRight, rightName),
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: Padding(
+                  padding: const EdgeInsets.all(220.0),
+                  child: Text(
+                      '${data['nicknames'][userState.uid]} - ${data['turn'] == userState.playKey ? 'Your Turn' : ''}',
+                      style: GoogleFonts.varelaRound(fontSize: 18, fontWeight: FontWeight.w900)),
+                ),
+              ),
             ]),
           );
         },

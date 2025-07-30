@@ -4,12 +4,6 @@ String getCardFileName(String card) {
   return '${int.parse(card[1])}_of_${getSeed(int.parse(card[0]))}.png';
 }
 
-Widget buildBackCard(int turns) => Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: RotatedBox(
-          quarterTurns: turns, child: SizedBox(height: 50, child: Image(image: AssetImage('assets/back_card.png')))),
-    );
-
 String getSeed(int n) {
   switch (n) {
     case 1:
@@ -49,11 +43,11 @@ const Map<int, int> _scoring = {
 
 int getPrimieraPoints(cardNum) => _scoring[cardNum] ?? 0;
 
-String getSeedImage(String cardNum) => _seedIcons[int.parse(cardNum[0])] ?? '';
+String getSuitImage(String cardNum) => _seedIcons[int.parse(cardNum[0])] ?? '';
 
 const Map<int, String> _seedIcons = {
-  1: 'Heart_red.png',
-  2: 'Diamond_red.png',
-  3: 'Club_black.png',
-  4: 'Spade_black.png',
+  1: 'assets/heart_red.png',
+  2: 'assets/diamond_red.png',
+  3: 'assets/club_black.png',
+  4: 'assets/spade_black.png',
 };
