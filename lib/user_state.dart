@@ -4,7 +4,7 @@ class UserState {
   bool dealer;
   String status;
   late DocumentReference<Map<String, dynamic>> currGame;
-  late String uid;
+  String uid = 'null';
   int turn = 0;
   late int turnKey;
   late String pair;
@@ -13,5 +13,6 @@ class UserState {
   int scope = 0;
   int round = 0;
   int get playKey => (turnKey - round) % 4;
+  late String nickname;
   UserState(this.dealer, this.status);
 }

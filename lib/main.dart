@@ -19,7 +19,7 @@ import 'package:scopa/user_state.dart';
 import 'package:scopa/utils.dart';
 import 'package:scopa/waiting_menu.dart';
 
-const testing = !kReleaseMode; // Set to true for testing purposes, false in production
+const testing = !kReleaseMode && false; // Set to true for testing purposes, false in production
 
 /// Possible Status:
 /// Empty     - No players, this status only shows in UserState class, NOT IN FIRESTORE
@@ -65,17 +65,40 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  Future<void> signInAnonymously() async => await FirebaseAuth.instance.signInAnonymously();
+  Future<void> signIn() async {
+    try {
+      if (kIsWeb) {
+        // Use signInWithPopup for web
+        final GoogleAuthProvider googleProvider = GoogleAuthProvider();
+        final userCredential = await FirebaseAuth.instance.signInWithPopup(googleProvider);
+        userState.uid = userCredential.user!.uid;
+        userState.nickname = userCredential.user!.displayName ?? userCredential.user!.uid;
+        setState(() {});
+      }
+    } catch (e) {
+      showSnackBar(context, "Sign-in failed: $e");
+    }
+  }
 
   void initialize() async {
     userState = UserState(false, 'empty');
-    await signInAnonymously();
-    userState.uid = FirebaseAuth.instance.currentUser!.uid;
-    setState(() => initialized = true);
   }
 
   @override
   void initState() {
+    super.initState();
+
+    // Listen for auth state changes
+    FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user != null) {
+        userState.uid = user.uid;
+        setState(() {}); // Update UI to reflect signed-in state
+      } else {
+        userState.uid = 'null';
+        setState(() {});
+      }
+    });
+
     html.window.onBeforeUnload.listen((event) {
       if (userState.status != 'finished' && userState.status != 'empty') {
         if (event is html.BeforeUnloadEvent) {}
@@ -86,7 +109,7 @@ class _MyHomePageState extends State<MyHomePage> {
         });
       }
     });
-
+    initialize();
     super.initState();
   }
 
@@ -104,7 +127,6 @@ class _MyHomePageState extends State<MyHomePage> {
   Duration cardAnimDuration = Durations.long4;
   StreamSubscription? streamSub;
 
-  bool initialized = false;
   bool first = false;
   bool scoreHover = false;
   final double cardSize = 50;
@@ -192,14 +214,10 @@ class _MyHomePageState extends State<MyHomePage> {
       return;
     }
 
-    final String? name = testing ? 'name' : await showTextInputDialog(context, 'Input Nickname', false);
-
-    dev.log(await joinGameWithCode(res.trim(), name!) ?? 'all good');
+    dev.log(await joinGameWithCode(res.trim(), userState.nickname) ?? 'all good');
   }
 
   Future<void> newGame() async {
-    final String? name = testing ? 'NAME' : await showTextInputDialog(context, 'Input Nickname', false);
-
     var ref = await FirebaseFirestore.instance.collection('games').add({
       'players': [
         uid,
@@ -212,9 +230,9 @@ class _MyHomePageState extends State<MyHomePage> {
       'secondPairScore': 0,
       'round': 0,
       'nicknames': {
-        uid: name,
+        uid: userState.nickname,
         if (testing) ...{'1': 'one', '2': 'two', '3': 'three'}
-      }
+      },
     });
     userState.currGame = ref;
     userState.dealer = true;
@@ -278,6 +296,23 @@ class _MyHomePageState extends State<MyHomePage> {
   void restartGame() async {
     await game.update({'round': FieldValue.increment(1)});
     startGame();
+  }
+
+  void leaveGame() async {
+    if (userState.status != 'empty') {
+      try {
+        await userState.currGame.update({
+          'players': FieldValue.arrayRemove([userState.uid]),
+          'status': 'abandoned',
+        });
+      } catch (e) {
+        showSnackBar(context, "Error leaving game: $e");
+      }
+    }
+    setState(() {
+      userState = UserState(false, 'empty');
+      first = false;
+    });
   }
 
   void nextTurn() async => await game.update({'turn': ((await game.get()).data()!['turn'] + 1) % 4});
@@ -467,6 +502,79 @@ class _MyHomePageState extends State<MyHomePage> {
       },
       'secondPairScore': FieldValue.increment(sScore),
     });
+
+    final ppl = await players;
+
+    incrementScore(data['nicknames'][ppl[0]], ppl[0], fScore);
+    incrementScore(data['nicknames'][ppl[1]], ppl[1], sScore);
+    incrementScore(data['nicknames'][ppl[2]], ppl[2], fScore);
+    incrementScore(data['nicknames'][ppl[3]], ppl[3], sScore);
+  }
+
+  void incrementScore(String name, String id, int score) async {
+    final doc = FirebaseFirestore.instance.collection('leaderboard').doc(id);
+    final data = await doc.get();
+    if (data.exists) {
+      await doc.update({
+        'totalPoints': FieldValue.increment(score),
+        'gamesPlayed': FieldValue.increment(1),
+      });
+    } else {
+      await doc.set({
+        'totalPoints': score,
+        'name': name,
+        'gamesPlayed': 1,
+      });
+    }
+  }
+
+  void showLeaderboard() async {
+    var scores = await FirebaseFirestore.instance.collection('leaderboard').orderBy('totalPoints').limit(10).get();
+    var data = scores.docs;
+    if (data.isEmpty) {
+      showSnackBar(context, "No scores available.");
+      return;
+    }
+
+    var entries = data
+        .map((doc) => {
+              'score': doc.data()['totalPoints'],
+              'name': doc.data()['name'],
+              'id': doc.id,
+              'gamesPlayed': doc.data()['gamesPlayed'] ?? 0,
+            })
+        .toList();
+
+    List<Widget> scoreWidgets = entries.map<Widget>((entry) {
+      return ListTile(
+        title: Text(entry['id'].split('-')[0]),
+        trailing: Text(entry['score'].toString()),
+        subtitle: Text('Games Played: ${entry['gamesPlayed']}'),
+      );
+    }).toList()
+      ..add(Text('You are at: ${entries.indexWhere((e) => e['id'] == '${userState.nickname}-${userState.uid}') + 1}'));
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text("Leaderboard"),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: scoreWidgets,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text("Close"),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   int checkPrimieraSeed(List<dynamic> cards, int seed) {
@@ -569,6 +677,7 @@ class _MyHomePageState extends State<MyHomePage> {
           ),
           FilledButton(onPressed: joinGame, child: Text("Join Game")),
           FilledButton(onPressed: newGame, child: Text("New Game")),
+          FilledButton(onPressed: showLeaderboard, child: Text("Show Leaderboard")),
         ]),
       ),
     );
@@ -576,9 +685,15 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    if (!initialized) {
-      initialize();
-      return Center(child: CircularProgressIndicator());
+    if (userState.uid == 'null') {
+      return Scaffold(
+        body: Center(
+          child: FilledButton(
+            onPressed: signIn,
+            child: Text('Sign in with Google'),
+          ),
+        ),
+      );
     }
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!first) {
@@ -604,13 +719,13 @@ class _MyHomePageState extends State<MyHomePage> {
     return Scaffold(
       body: Stack(
         children: [
-          if (testing) ...[
-            if (userState.status != 'empty') Align(alignment: Alignment.topRight, child: Text(userState.pair)),
-            if (userState.status == 'playing')
-              Align(
-                  alignment: Alignment.topLeft,
-                  child: Text('${userState.turnKey}, ${userState.turn}, ${userState.round}')),
-          ],
+          Align(
+              alignment: Alignment.topRight,
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: ElevatedButton(onPressed: leaveGame, child: Text('Leave Game')),
+              )),
+          if (testing) ...[],
           switch (userState.status) {
             'empty' => buildStartMenu(),
             'waiting' => WaitingMenu(userState: userState, gameId: game.id, startGame: startGame),
