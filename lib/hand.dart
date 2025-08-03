@@ -42,7 +42,7 @@ class Hand extends StatelessWidget {
                   return AnimatedPositioned(
                     duration: Durations.short4,
                     bottom: 10,
-                    left: startPos + x * cardSize,
+                    left: (startPos + x * cardSize) - cardSize / 2,
                     child: HandCard(myHand[x], playCard, cardSize),
                   );
                 },

@@ -14,5 +14,6 @@ class UserState {
   int round = 0;
   int get playKey => (turnKey - round) % 4;
   late String nickname;
+  late String imgUrl;
   UserState(this.dealer, this.status);
 }

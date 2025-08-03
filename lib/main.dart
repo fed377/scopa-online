@@ -31,7 +31,6 @@ const testing = !kReleaseMode && false; // Set to true for testing purposes, fal
 /// Uneven turnkey means firstpair
 
 //TODO: Show own name with edit button
-//TODO: Show detailed score, cards taken, scope at end of game, etc..
 
 typedef DynaMap = Map<String, dynamic>;
 
@@ -71,8 +70,10 @@ class _MyHomePageState extends State<MyHomePage> {
         // Use signInWithPopup for web
         final GoogleAuthProvider googleProvider = GoogleAuthProvider();
         final userCredential = await FirebaseAuth.instance.signInWithPopup(googleProvider);
-        userState.uid = userCredential.user!.uid;
-        userState.nickname = userCredential.user!.displayName ?? userCredential.user!.uid;
+        var user = userCredential.user!;
+        userState.uid = user.uid;
+        userState.nickname = user.displayName ?? userCredential.user!.uid;
+        userState.imgUrl = user.photoURL ?? '';
         setState(() {});
       }
     } catch (e) {
@@ -92,7 +93,10 @@ class _MyHomePageState extends State<MyHomePage> {
     FirebaseAuth.instance.authStateChanges().listen((user) {
       if (user != null) {
         userState.uid = user.uid;
-        setState(() {}); // Update UI to reflect signed-in state
+        userState.nickname = user.displayName ?? 'user-${user.uid.substring(0, 5)}';
+        userState.imgUrl = user.photoURL ?? '';
+        dev.log('User image URL: ${userState.imgUrl}');
+        setState(() {});
       } else {
         userState.uid = 'null';
         setState(() {});
@@ -206,7 +210,7 @@ class _MyHomePageState extends State<MyHomePage> {
     super.dispose();
   }
 
-  void joinGame() async {
+  void requestJoinCode() async {
     final String? res = await showTextInputDialog(context, 'Input Game Code', true);
 
     if (res == null || res.trim() == ' ') {
@@ -214,10 +218,66 @@ class _MyHomePageState extends State<MyHomePage> {
       return;
     }
 
-    dev.log(await joinGameWithCode(res.trim(), userState.nickname) ?? 'all good');
+    final String? result = await joinGameWithCode(res.trim(), userState.nickname);
+    if (result != null) {
+      showSnackBar(context, result);
+    } else {
+      showSnackBar(context, "Joined game successfully!");
+    }
   }
 
-  Future<void> newGame() async {
+  void joinGame() async {
+
+    String? res = await showDialog<String>(
+      barrierDismissible: true,
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text("Join Game"),
+        content: SizedBox(
+          height: 400,
+          width: 350,
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('games')
+                .where('status', isEqualTo: 'waiting')
+                .where('privacy', isEqualTo: 'public')
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return Center(child: CircularProgressIndicator());
+              }
+              final docs = snapshot.data!.docs;
+              if (docs.isEmpty) {
+                return Text('No open games');
+              }
+              return ListView(
+                children: docs.map<Widget>((doc) {
+                  final nicknames = (doc['nicknames'] as Map).values.join(', ');
+                  return ListTile(
+                    title: Text(doc.id),
+                    subtitle: Text(nicknames),
+                    onTap: () => Navigator.of(context).pop(doc.id),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+        ),
+        actions: [
+          FilledButton(onPressed: requestJoinCode, child: Text("Type Code")),
+          TextButton(onPressed: Navigator.of(context).pop, child: Text("Exit")),
+        ],
+      ),
+    );
+
+    if (res == null || res.trim() == '') {
+      return;
+    }
+
+    dev.log(await joinGameWithCode(res.trim(), userState.nickname) ?? 'Join game successfully!');
+  }
+
+  Future<void> newGame(bool private) async {
     var ref = await FirebaseFirestore.instance.collection('games').add({
       'players': [
         uid,
@@ -233,6 +293,10 @@ class _MyHomePageState extends State<MyHomePage> {
         uid: userState.nickname,
         if (testing) ...{'1': 'one', '2': 'two', '3': 'three'}
       },
+      'images': {
+        uid: userState.imgUrl,
+        if (testing) ...{'1': ' ', '2': ' ', '3': ' '}
+      }
     });
     userState.currGame = ref;
     userState.dealer = true;
@@ -279,6 +343,7 @@ class _MyHomePageState extends State<MyHomePage> {
     await gameDoc.update({
       'players': FieldValue.arrayUnion([uid]),
       'nicknames.$uid': nickname,
+      'images.$uid': userState.imgUrl,
     });
 
     streamSub?.cancel();
@@ -551,19 +616,27 @@ class _MyHomePageState extends State<MyHomePage> {
         trailing: Text(entry['score'].toString()),
         subtitle: Text('Games Played: ${entry['gamesPlayed']}'),
       );
-    }).toList()
-      ..add(Text('You are at: ${entries.indexWhere((e) => e['id'] == '${userState.nickname}-${userState.uid}') + 1}'));
+    }).toList();
 
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
           title: Text("Leaderboard"),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          content: SingleChildScrollView(
+          content: SizedBox(
+            width: 350,
+            height: 400,
             child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: scoreWidgets,
+              children: [
+                Text(
+                    'You are at: ${entries.indexWhere((e) => e['id'] == '${userState.nickname}-${userState.uid}') + 1}'),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: scoreWidgets.isEmpty
+                      ? Center(child: Text("No users\non leaderboard"))
+                      : ListView(children: scoreWidgets),
+                ),
+              ],
             ),
           ),
           actions: [
@@ -666,40 +739,52 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Widget buildStartMenu() {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: pad([
-          HandCard('23', (_) {}, 150),
-          Text(
-            'Online Scopa',
-            style: TextStyle(fontFamily: 'Serif', fontSize: 25),
-          ),
-          FilledButton(onPressed: joinGame, child: Text("Join Game")),
-          FilledButton(onPressed: newGame, child: Text("New Game")),
-          FilledButton(onPressed: showLeaderboard, child: Text("Show Leaderboard")),
-        ]),
+      child: SizedBox(
+        width: 200,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: pad([
+                HandCard('27', (_) {}, 150),
+                Text(
+                  'Online Scopa',
+                  style: TextStyle(fontFamily: 'Serif', fontSize: 25),
+                ),
+                if (userState.uid == 'null')
+                  Center(
+                    child: FilledButton(
+                      onPressed: signIn,
+                      child: Text('Sign in with Google'),
+                    ),
+                  ),
+              ]),
+            ),
+            if (userState.uid != 'null')
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: pad([
+                  FilledButton(onPressed: joinGame, child: Text("Join Game")),
+                  FilledButton(onPressed: () => newGame(false), child: Text("New Game")),
+                  FilledButton(onPressed: showLeaderboard, child: Text("Show Leaderboard")),
+                ]),
+              ),
+          ],
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (userState.uid == 'null') {
-      return Scaffold(
-        body: Center(
-          child: FilledButton(
-            onPressed: signIn,
-            child: Text('Sign in with Google'),
-          ),
-        ),
-      );
-    }
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!first) {
         first = true;
         if (testing) {
-          await newGame();
+          await newGame(false);
           startGame();
         }
       }
@@ -719,12 +804,13 @@ class _MyHomePageState extends State<MyHomePage> {
     return Scaffold(
       body: Stack(
         children: [
-          Align(
-              alignment: Alignment.topRight,
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: ElevatedButton(onPressed: leaveGame, child: Text('Leave Game')),
-              )),
+          if (userState.status != 'empty')
+            Align(
+                alignment: Alignment.topRight,
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: FilledButton.tonal(onPressed: leaveGame, child: Text('Exit Game')),
+                )),
           if (testing) ...[],
           switch (userState.status) {
             'empty' => buildStartMenu(),
@@ -735,7 +821,7 @@ class _MyHomePageState extends State<MyHomePage> {
             'counting' => Center(child: Text('Score is being counted')),
             'finished' =>
               FinishedMenu(game.snapshots(), userState.pair, userState.oppositePair, restartGame, userState.dealer),
-            String() => Text('Unexpected game state: ${userState.status}'),
+            String() => Text('Unexpected game status: ${userState.status}'),
           },
         ],
       ),
