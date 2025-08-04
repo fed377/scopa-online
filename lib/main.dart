@@ -19,7 +19,7 @@ import 'package:scopa/user_state.dart';
 import 'package:scopa/utils.dart';
 import 'package:scopa/waiting_menu.dart';
 
-const testing = !kReleaseMode && false; // Set to true for testing purposes, false in production
+const testing = !kReleaseMode; // Set to true for testing purposes, false in production
 
 /// Possible Status:
 /// Empty     - No players, this status only shows in UserState class, NOT IN FIRESTORE
@@ -29,8 +29,6 @@ const testing = !kReleaseMode && false; // Set to true for testing purposes, fal
 /// Counting  - dealer is counting score
 /// Finished  - game is done, scores are being shown
 /// Uneven turnkey means firstpair
-
-//TODO: Show own name with edit button
 
 typedef DynaMap = Map<String, dynamic>;
 
@@ -75,6 +73,7 @@ class _MyHomePageState extends State<MyHomePage> {
         userState.nickname = user.displayName ?? userCredential.user!.uid;
         userState.imgUrl = user.photoURL ?? '';
         setState(() {});
+        if (testing) startTestGame(null);
       }
     } catch (e) {
       showSnackBar(context, "Sign-in failed: $e");
@@ -227,7 +226,6 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void joinGame() async {
-
     String? res = await showDialog<String>(
       barrierDismissible: true,
       context: context,
@@ -778,17 +776,19 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
+  void startTestGame(_) async {
+    if (!first) {
+      first = true;
+      if (testing) {
+        await newGame(false);
+        startGame();
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!first) {
-        first = true;
-        if (testing) {
-          await newGame(false);
-          startGame();
-        }
-      }
-    });
+    if (FirebaseAuth.instance.currentUser != null) WidgetsBinding.instance.addPostFrameCallback(startTestGame);
 
     final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
     if (isPortrait) {
@@ -809,7 +809,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 alignment: Alignment.topRight,
                 child: Padding(
                   padding: const EdgeInsets.all(8.0),
-                  child: FilledButton.tonal(onPressed: leaveGame, child: Text('Exit Game')),
+                  child: FilledButton(onPressed: leaveGame, child: Text('Exit Game')),
                 )),
           if (testing) ...[],
           switch (userState.status) {

@@ -1,4 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cached_network_image_platform_interface/cached_network_image_platform_interface.dart'
+    show ImageRenderMethodForWeb;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -83,17 +85,20 @@ class OpponentHands extends StatelessWidget {
                 padding: const EdgeInsets.all(220.0),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
-                  children: [
+                  children: utils.pad([
                     CircleAvatar(
                       radius: 20,
                       backgroundColor: Colors.white,
-                      foregroundImage: url.trim() == '' ? null : CachedNetworkImageProvider(url),
+                      foregroundImage: userState.imgUrl.trim() == ''
+                          ? null
+                          : CachedNetworkImageProvider(userState.imgUrl,
+                              imageRenderMethodForWeb: ImageRenderMethodForWeb.HttpGet),
                     ),
                     Text(
                       '${data['nicknames'][userState.uid]} - ${data['turn'] == userState.playKey ? 'Your Turn' : ''}',
                       style: GoogleFonts.varelaRound(fontSize: 18, fontWeight: FontWeight.w900),
                     ),
-                  ],
+                  ]),
                 ),
               ),
             ),
