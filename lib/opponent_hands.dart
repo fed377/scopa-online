@@ -92,7 +92,7 @@ class OpponentHands extends StatelessWidget {
                       foregroundImage: userState.imgUrl.trim() == ''
                           ? null
                           : CachedNetworkImageProvider(userState.imgUrl,
-                              imageRenderMethodForWeb: ImageRenderMethodForWeb.HttpGet),
+                              imageRenderMethodForWeb: ImageRenderMethodForWeb.HttpGet, errorListener: (error) {}),
                     ),
                     Text(
                       '${data['nicknames'][userState.uid]} - ${data['turn'] == userState.playKey ? 'Your Turn' : ''}',

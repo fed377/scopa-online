@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:scopa/hand_card.dart';
+import 'package:scopa/main_title.dart';
 import 'package:scopa/user_state.dart';
 import 'package:scopa/utils.dart';
 
@@ -42,11 +42,7 @@ class WaitingMenu extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: pad([
-              HandCard('23', (_) {}, 150),
-              Text(
-                'Online Scopa',
-                style: TextStyle(fontFamily: 'Serif', fontSize: 25),
-              ),
+              MainTitle(fontSize: 84),
               userState.dealer
                   ? FilledButton(
                       onPressed: startGame,

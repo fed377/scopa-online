@@ -32,34 +32,38 @@ class OpponentHand extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Flex(
-              mainAxisSize: MainAxisSize.min,
-              direction: turn % 2 == 0 ? Axis.horizontal : Axis.vertical,
-              children: [
-                RotatedBox(
-                  quarterTurns: -turn,
-                  child: Text(
-                    name,
-                    style: GoogleFonts.varelaRound(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+            Padding(
+              padding: EdgeInsets.all(turn % 2 == 0 ? 50 : 10),
+              child: Flex(
+                mainAxisSize: MainAxisSize.min,
+                direction: turn % 2 == 0 ? Axis.horizontal : Axis.vertical,
+                children: [
+                  RotatedBox(
+                    quarterTurns: turn % 2 == 0 ? 2 : 0,
+                    child: Text(
+                      name,
+                      style: GoogleFonts.varelaRound(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                ),
-                RotatedBox(
-                  quarterTurns: -turn,
-                  child: CircleAvatar(
-                    radius: 30,
-                    foregroundImage: url.trim() == '' ? null : CachedNetworkImageProvider(url),
-                    backgroundColor: Colors.transparent,
+                  RotatedBox(
+                    quarterTurns: turn % 2 == 0 ? 2 : 0,
+                    child: CircleAvatar(
+                      radius: 30,
+                      foregroundImage:
+                          url.trim() == '' ? null : CachedNetworkImageProvider(url, errorListener: (error) {}),
+                      backgroundColor: Colors.transparent,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             Container(
               width: fullWidth,
-              height: 200,
+              height: 120,
               decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
               margin: const EdgeInsets.all(8.0),
               child: Stack(

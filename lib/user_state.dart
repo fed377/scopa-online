@@ -15,5 +15,6 @@ class UserState {
   int get playKey => (turnKey - round) % 4;
   late String nickname;
   late String imgUrl;
+  List<dynamic> users = [];
   UserState(this.dealer, this.status);
 }

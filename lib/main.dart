@@ -1,23 +1,23 @@
 import 'dart:async';
 import 'dart:developer' as dev;
-import 'dart:html' as html;
+import 'dart:js_interop';
 import 'dart:math';
+import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:scopa/board_cards.dart';
 import 'package:scopa/finished_menu.dart';
 import 'package:scopa/firebase_options.dart';
-import 'package:scopa/hand.dart';
-import 'package:scopa/hand_card.dart';
-import 'package:scopa/opponent_hands.dart';
-import 'package:scopa/taken_cards.dart';
+import 'package:scopa/playing_menu.dart';
+import 'package:scopa/sign_in_menu.dart';
+import 'package:scopa/start_menu.dart';
 import 'package:scopa/user_state.dart';
 import 'package:scopa/utils.dart';
 import 'package:scopa/waiting_menu.dart';
+import 'package:web/web.dart' as web;
 
 const testing = !kReleaseMode; // Set to true for testing purposes, false in production
 
@@ -47,7 +47,8 @@ class MyApp extends StatelessWidget {
       routes: {'main': (context) => MyHomePage()},
       initialRoute: 'main',
       theme: ThemeData(
-        colorScheme: ColorScheme.dark(),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.grey),
+        fontFamily: 'Segoe UI',
         useMaterial3: true,
       ),
     );
@@ -94,7 +95,6 @@ class _MyHomePageState extends State<MyHomePage> {
         userState.uid = user.uid;
         userState.nickname = user.displayName ?? 'user-${user.uid.substring(0, 5)}';
         userState.imgUrl = user.photoURL ?? '';
-        dev.log('User image URL: ${userState.imgUrl}');
         setState(() {});
       } else {
         userState.uid = 'null';
@@ -102,16 +102,16 @@ class _MyHomePageState extends State<MyHomePage> {
       }
     });
 
-    html.window.onBeforeUnload.listen((event) {
+    web.window.onbeforeunload = (web.Event event) {
       if (userState.status != 'finished' && userState.status != 'empty') {
-        if (event is html.BeforeUnloadEvent) {}
+        if (event.isA<web.BeforeUnloadEvent>()) {}
         userState.status = 'abandoned';
         userState.currGame.update({
           'status': 'abandoned',
           'players': FieldValue.arrayRemove([userState.uid]),
         });
       }
-    });
+    }.toJS;
     initialize();
     super.initState();
   }
@@ -179,13 +179,99 @@ class _MyHomePageState extends State<MyHomePage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  void pushNewPage() {
+    Widget page;
+    switch (userState.status) {
+      case 'empty':
+        page = userState.uid == 'null'
+            ? SignInMenu(signIn: signIn)
+            : StartMenu(
+                joinGame: joinGame,
+                newGame: newGame,
+                showLeaderboard: showLeaderboard,
+              );
+        break;
+      case 'waiting':
+        page = WaitingMenu(
+          userState: userState,
+          gameId: game.id,
+          startGame: startGame,
+        );
+        break;
+      case 'dealing':
+        page = Center(child: CircularProgressIndicator());
+        break;
+      case 'playing':
+        page = PlayingMenu(
+          game: game,
+          userState: userState,
+          snapshot: game.snapshots(),
+          cardSize: cardSize,
+          playCard: playCard,
+          cardAnimDuration: cardAnimDuration,
+        );
+        break;
+      case 'abandoned':
+        page = Center(child: Text('Game abandoned by a player'));
+        break;
+      case 'counting':
+        page = Center(child: Text('Score is being counted'));
+        break;
+      case 'finished':
+        page = FinishedMenu(
+          game.snapshots(),
+          userState.pair,
+          userState.oppositePair,
+          restartGame,
+          userState.dealer,
+        );
+        break;
+      default:
+        page = Text('Unexpected game status: ${userState.status}');
+    }
+    Navigator.of(context).push(PageRouteBuilder(
+      pageBuilder: (_, __, ___) => Scaffold(
+        body: Stack(
+          children: [
+            if (userState.status != 'empty')
+              Align(
+                alignment: Alignment.topRight,
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: FilledButton(onPressed: leaveGame, child: Text('Exit Game')),
+                ),
+              ),
+            buildBG(),
+            page,
+          ],
+        ),
+      ),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        // Fade + blur transition
+        final blur = 10 * (1 - animation.value);
+        return FadeTransition(
+          opacity: animation,
+          child: ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+            child: child,
+          ),
+        );
+      },
+      transitionDuration: Duration(milliseconds: 400),
+    ));
+  }
+
   void listener(DocumentSnapshot<DynaMap> a) async {
     String status = a.get('status') as String;
     int turn = a.get('turn') as int;
     setState(() {
-      userState.status = status;
+      if (userState.status != status) {
+        userState.status = status;
+        pushNewPage();
+      }
       userState.turn = turn;
       userState.round = a.get('round');
+      userState.users = a.get('players');
       try {
         userState.cardsGained = (a.get('${userState.pair}Cards') as List<dynamic>).length;
         userState.scope = a.get('${userState.pair}Scope');
@@ -194,6 +280,7 @@ class _MyHomePageState extends State<MyHomePage> {
         userState.scope = 0;
       }
     });
+
     var hnds = await hands;
     if (hnds.values.every((e) => e.isEmpty) && a.get('status') == 'playing' && a.get('players').length == 4) {
       var brd = await board;
@@ -201,6 +288,20 @@ class _MyHomePageState extends State<MyHomePage> {
       await game.update({'status': 'counting', 'firstPairCards': FieldValue.arrayUnion(brd)});
       if (userState.dealer) countScores();
     }
+  }
+
+  SizedBox buildBG() {
+    return SizedBox.expand(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color.fromARGB(255, 52, 199, 89), Color.fromARGB(255, 25, 97, 43)],
+            begin: Alignment.bottomCenter,
+            end: Alignment.topCenter,
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -302,6 +403,7 @@ class _MyHomePageState extends State<MyHomePage> {
     userState.pair = 'secondPair';
     ref.snapshots().listen(listener);
     userState.status = 'waiting';
+    pushNewPage();
   }
 
   void startGame() async {
@@ -315,6 +417,7 @@ class _MyHomePageState extends State<MyHomePage> {
     status = 'dealing';
     await dealCards();
     status = 'playing';
+    pushNewPage();
   }
 
   Future<String?> joinGameWithCode(String code, String nickname) async {
@@ -352,6 +455,7 @@ class _MyHomePageState extends State<MyHomePage> {
     userState.dealer = false;
     userState.pair = userState.turnKey % 2 == 0 ? 'secondPair' : 'firstPair';
     setState(() => userState.status = 'waiting');
+    pushNewPage();
 
     return null;
   }
@@ -376,6 +480,8 @@ class _MyHomePageState extends State<MyHomePage> {
       userState = UserState(false, 'empty');
       first = false;
     });
+
+    pushNewPage();
   }
 
   void nextTurn() async => await game.update({'turn': ((await game.get()).data()!['turn'] + 1) % 4});
@@ -693,93 +799,30 @@ class _MyHomePageState extends State<MyHomePage> {
     return ret;
   }
 
-  Widget buildPlayingMenu() {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        buildPlayBoard(),
-        Align(
-          alignment: Alignment.bottomCenter,
-          child: Hand(userState: userState, snapshot: game.snapshots(), cardSize: cardSize, playCard: playCard),
-        ),
-        BoardCards(
-          disappearingCards: disappearingCards,
-          cardAnimDuration: cardAnimDuration,
-          snapshot: game.snapshots(),
-          turnKey: userState.turnKey,
-          round: userState.round,
-        ),
-        OpponentHands(game: game, userState: userState, cardSize: cardSize),
-        TakenCards(
-          snapshot: game.snapshots(),
-          pair: userState.pair,
-          oppositePair: userState.oppositePair,
-          cardSize: cardSize,
-        ),
-      ],
-    );
-  }
+  Random rand = Random();
 
-  Widget buildPlayBoard() {
-    return Padding(
-      padding: EdgeInsets.all(200),
-      child: SizedBox.expand(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: const Color.fromARGB(221, 27, 27, 27),
-            borderRadius: BorderRadius.circular(30),
-            border: Border.all(color: Colors.white, width: 2),
-          ),
-        ),
-      ),
-    );
-  }
+  List<Color> blobColors = [
+    Colors.deepPurple.shade900,
+    const Color.fromARGB(255, 0, 41, 190),
+    const Color.fromARGB(255, 94, 0, 172)
+  ];
 
-  Widget buildStartMenu() {
-    return Center(
-      child: SizedBox(
-        width: 200,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: pad([
-                HandCard('27', (_) {}, 150),
-                Text(
-                  'Online Scopa',
-                  style: TextStyle(fontFamily: 'Serif', fontSize: 25),
-                ),
-                if (userState.uid == 'null')
-                  Center(
-                    child: FilledButton(
-                      onPressed: signIn,
-                      child: Text('Sign in with Google'),
-                    ),
-                  ),
-              ]),
-            ),
-            if (userState.uid != 'null')
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: pad([
-                  FilledButton(onPressed: joinGame, child: Text("Join Game")),
-                  FilledButton(onPressed: () => newGame(false), child: Text("New Game")),
-                  FilledButton(onPressed: showLeaderboard, child: Text("Show Leaderboard")),
-                ]),
-              ),
-          ],
-        ),
-      ),
-    );
+  Widget buildPlayingMenu(UserState userState, Stream<DocumentSnapshot<Map<String, dynamic>>> snapshot, double cardSize,
+      void Function(String) playCard, Duration cardAnimDuration) {
+    return PlayingMenu(
+        game: game,
+        userState: userState,
+        snapshot: snapshot,
+        cardSize: cardSize,
+        playCard: playCard,
+        cardAnimDuration: cardAnimDuration);
   }
 
   void startTestGame(_) async {
     if (!first) {
       first = true;
       if (testing) {
+        return;
         await newGame(false);
         startGame();
       }
@@ -788,8 +831,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    if (FirebaseAuth.instance.currentUser != null) WidgetsBinding.instance.addPostFrameCallback(startTestGame);
-
     final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
     if (isPortrait) {
       return Scaffold(
@@ -801,30 +842,15 @@ class _MyHomePageState extends State<MyHomePage> {
         ),
       );
     }
+
     return Scaffold(
-      body: Stack(
-        children: [
-          if (userState.status != 'empty')
-            Align(
-                alignment: Alignment.topRight,
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: FilledButton(onPressed: leaveGame, child: Text('Exit Game')),
-                )),
-          if (testing) ...[],
-          switch (userState.status) {
-            'empty' => buildStartMenu(),
-            'waiting' => WaitingMenu(userState: userState, gameId: game.id, startGame: startGame),
-            'dealing' => Center(child: CircularProgressIndicator()),
-            'playing' => buildPlayingMenu(),
-            'abandoned' => Center(child: Text('Game abandoned by a player')),
-            'counting' => Center(child: Text('Score is being counted')),
-            'finished' =>
-              FinishedMenu(game.snapshots(), userState.pair, userState.oppositePair, restartGame, userState.dealer),
-            String() => Text('Unexpected game status: ${userState.status}'),
-          },
-        ],
-      ),
-    );
+        body: Stack(
+      children: [
+        buildBG(),
+        userState.uid == 'null'
+            ? SignInMenu(signIn: signIn)
+            : StartMenu(joinGame: joinGame, newGame: newGame, showLeaderboard: showLeaderboard),
+      ],
+    ));
   }
 }

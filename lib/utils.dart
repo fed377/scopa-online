@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+
+    var glassColor = Color.fromARGB(255, 0, 79, 0);
+
 String getCardFileName(String card) {
   return '${int.parse(card[1])}_of_${getSeed(int.parse(card[0]))}.png';
 }

@@ -8,14 +8,12 @@ import 'package:scopa/board_card.dart';
 class BoardCards extends StatelessWidget {
   const BoardCards({
     super.key,
-    required this.disappearingCards,
     required this.cardAnimDuration,
     required this.snapshot,
     required this.turnKey,
     required this.round,
   });
 
-  final List<String> disappearingCards;
   final Duration cardAnimDuration;
   final Stream<DocumentSnapshot<Map<String, dynamic>>> snapshot;
   final int turnKey;
