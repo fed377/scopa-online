@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:scopa/theme.dart';
 
+/// A card-shaped tile for one scoring category. Hovering lifts it and reveals
+/// what it was awarded for.
 class ScoreCard extends StatefulWidget {
   const ScoreCard({super.key, required this.num, required this.icon, required this.color, required this.text});
 
@@ -18,57 +20,63 @@ class _ScoreCardState extends State<ScoreCard> {
 
   @override
   Widget build(BuildContext context) {
-    Duration duration = Durations.short4;
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: MouseRegion(
         onEnter: (_) => setState(() => hovering = true),
         onExit: (_) => setState(() => hovering = false),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: AnimatedOpacity(opacity: hovering ? 1 : 0, duration: duration, child: Text(widget.text)),
-            ),
-            AnimatedContainer(
-              duration: duration,
-              transform: Matrix4.identity()..translate(0, hovering ? -20 : 0),
-              height: hovering ? 150 : 100,
-              width: hovering ? 110 : 73,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                    colors: [Colors.white, const Color.fromARGB(255, 231, 231, 231)],
-                    begin: Alignment.bottomLeft,
-                    end: Alignment.topRight),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [BoxShadow(color: const Color.fromARGB(90, 0, 0, 0), blurRadius: 20)],
+        child: Tooltip(
+          message: widget.text,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedOpacity(
+                opacity: hovering ? 1 : 0,
+                duration: Motion.fast,
+                // As wide as the card, so long labels don't push the cards apart.
+                child: SizedBox(
+                  width: 76,
+                  height: 26,
+                  child: OverflowBox(
+                    maxWidth: 220,
+                    child: Text(widget.text, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                ),
               ),
-              child: Stack(
-                children: [
-                  Container(
-                      decoration: BoxDecoration(boxShadow: [
-                        BoxShadow(
-                          color: widget.color.withAlpha(20),
-                          blurRadius: 30,
-                          spreadRadius: -100,
-                        )
-                      ]),
-                      child: Align(alignment: Alignment.center, child: SizedBox(height: 40, child: widget.icon))),
-                  Align(
-                    alignment: Alignment.topLeft,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(10, 6, 8, 8),
-                      child: Text(
-                        widget.num,
-                        style: GoogleFonts.varelaRound(color: widget.color, fontSize: 25, fontWeight: FontWeight.w900),
+              AnimatedSlide(
+                offset: hovering ? const Offset(0, -0.12) : Offset.zero,
+                duration: Motion.medium,
+                curve: Motion.enter,
+                child: AnimatedScale(
+                  scale: hovering ? 1.12 : 1,
+                  duration: Motion.medium,
+                  curve: Motion.enter,
+                  child: SizedBox(
+                    width: 76,
+                    height: 104,
+                    child: DecoratedBox(
+                      decoration: ShapeDecoration(
+                        shape: roundedShape(20),
+                        gradient: const LinearGradient(
+                          colors: [AppColors.cardLight, AppColors.cardDark],
+                          begin: Alignment.bottomLeft,
+                          end: Alignment.topRight,
+                        ),
+                        shadows: const [BoxShadow(color: AppColors.shadow, blurRadius: 14, offset: Offset(0, 4))],
+                      ),
+                      child: Stack(
+                        children: [
+                          Center(child: SizedBox(height: 40, child: widget.icon)),
+                          Positioned(
+                              left: 10, top: 8, child: Text(widget.num, style: displayStyle(22, color: widget.color))),
+                        ],
                       ),
                     ),
-                  )
-                ],
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

@@ -1,112 +1,69 @@
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:cached_network_image_platform_interface/cached_network_image_platform_interface.dart'
-    show ImageRenderMethodForWeb;
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:scopa/main.dart';
+import 'package:scopa/game/rules.dart';
 import 'package:scopa/opponent_hand.dart';
-import 'package:scopa/user_state.dart';
-import 'package:scopa/utils.dart' as utils;
+import 'package:scopa/theme.dart';
+import 'package:scopa/utils.dart';
+import 'package:scopa/widgets/player_badge.dart';
+import 'package:scopa/widgets/playing_card.dart';
 
+/// The other three seats around the table, in play order starting on the
+/// left, plus this player's own badge above their hand.
 class OpponentHands extends StatelessWidget {
-  const OpponentHands({
-    super.key,
-    required this.game,
-    required this.userState,
-    required this.cardSize,
-  });
+  const OpponentHands({super.key, required this.data, required this.uid});
 
-  final DocumentReference<DynaMap> game;
-  final UserState userState;
-  final double cardSize;
+  final DynaMap data;
+  final String uid;
+
+  static const _alignments = [Alignment.centerLeft, Alignment.topCenter, Alignment.centerRight];
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: StreamBuilder<DocumentSnapshot>(
-        stream: game.snapshots(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) return CircularProgressIndicator();
+    final players = List<String>.from(data['players']);
+    final nicknames = data['nicknames'] as Map;
+    final images = data['images'] as Map;
+    final counts = data['handCounts'] as Map? ?? {};
+    final seat = players.indexOf(uid);
+    final toPlay = players[seatToPlay(data['turn'], data['round'])];
+    final waiting = data['pending'] == null;
+    final metrics = CardMetrics.of(context);
 
-          final data = snapshot.data!.data() as Map<String, dynamic>;
-          final hands = data['hands'] as Map<String, dynamic>;
-          int x = 1;
-          String nextPlayerId = data['players'][(userState.turnKey + x) % 4];
-          List<dynamic> nextPlayerHand = hands[nextPlayerId];
-          String playerName = data['nicknames'][nextPlayerId];
-          String url = data['images'][nextPlayerId];
-
-          void incrementId() {
-            x += 1;
-            nextPlayerId = data['players'][(userState.turnKey + x) % 4];
-            nextPlayerHand = hands[nextPlayerId];
-            playerName = data['nicknames'][nextPlayerId];
-            url = data['images'][nextPlayerId];
-          }
-
-          List<Widget> children = [];
-
-          children.add(OpponentHand(
-            cardSize * (nextPlayerHand.length + 1),
-            cardSize,
-            1,
-            Alignment.centerLeft,
-            playerName,
-            url,
-            nextPlayerHand.length,
-          ));
-          incrementId();
-          children.add(OpponentHand(
-            cardSize * (nextPlayerHand.length + 1),
-            cardSize,
-            2,
-            Alignment.topCenter,
-            playerName,
-            url,
-            nextPlayerHand.length,
-          ));
-          incrementId();
-          children.add(OpponentHand(
-            cardSize * (nextPlayerHand.length + 1),
-            cardSize,
-            3,
-            Alignment.centerRight,
-            playerName,
-            url,
-            nextPlayerHand.length,
-          ));
-
-          children.add(
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: Padding(
-                padding: const EdgeInsets.all(220.0),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: utils.pad([
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundColor: Colors.white,
-                      foregroundImage: userState.imgUrl.trim() == ''
-                          ? null
-                          : CachedNetworkImageProvider(userState.imgUrl,
-                              imageRenderMethodForWeb: ImageRenderMethodForWeb.HttpGet, errorListener: (error) {}),
-                    ),
-                    Text(
-                      '${data['nicknames'][userState.uid]} - ${data['turn'] == userState.playKey ? 'Your Turn' : ''}',
-                      style: GoogleFonts.varelaRound(fontSize: 18, fontWeight: FontWeight.w900),
-                    ),
-                  ]),
+    return Stack(
+      children: [
+        for (var x = 1; x <= 3; x++)
+          if (players[(seat + x) % 4] case final id)
+            Padding(
+              padding: const EdgeInsets.all(18),
+              child: OpponentHand(
+                alignment: _alignments[x - 1],
+                name: nicknames[id] ?? '',
+                imageUrl: images[id] ?? '',
+                count: counts[id] as int? ?? 0,
+                cardHeight: metrics.height * 0.62,
+                active: waiting && id == toPlay,
+              ),
+            ),
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: Padding(
+            padding: EdgeInsets.only(bottom: metrics.height + 44),
+            child: PlayerBadge(
+              name: nicknames[uid] ?? '',
+              imageUrl: images[uid] ?? '',
+              active: waiting && toPlay == uid,
+              trailing: AnimatedSize(
+                duration: Motion.medium,
+                curve: Motion.enter,
+                child: AnimatedSwitcher(
+                  duration: Motion.medium,
+                  child: waiting && toPlay == uid
+                      ? Text('· Your turn', key: const ValueKey(true), style: displayStyle(15, color: AppColors.accent))
+                      : const SizedBox.shrink(key: ValueKey(false)),
                 ),
               ),
             ),
-          );
-
-          return Stack(children: utils.pad(children));
-        },
-      ),
+          ),
+        ),
+      ],
     );
   }
 }

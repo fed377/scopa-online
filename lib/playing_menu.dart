@@ -1,55 +1,60 @@
-import 'dart:async';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:scopa/board_cards.dart';
+import 'package:scopa/game/rules.dart';
 import 'package:scopa/hand.dart';
-import 'package:scopa/main.dart';
 import 'package:scopa/opponent_hands.dart';
 import 'package:scopa/play_board.dart';
 import 'package:scopa/taken_cards.dart';
-import 'package:scopa/user_state.dart';
+import 'package:scopa/utils.dart';
+import 'package:scopa/widgets/scopa_banner.dart';
+import 'package:scopa/widgets/scoreboard.dart';
 
 class PlayingMenu extends StatelessWidget {
   const PlayingMenu({
     super.key,
-    required this.game,
-    required this.userState,
-    required this.snapshot,
-    required this.cardSize,
+    required this.data,
+    required this.hand,
+    required this.uid,
     required this.playCard,
     required this.cardAnimDuration,
   });
 
-  final UserState userState;
-  final Stream<DocumentSnapshot<Map<String, dynamic>>> snapshot;
-  final double cardSize;
+  final DynaMap data;
+  final List<String> hand;
+  final String uid;
   final void Function(String) playCard;
   final Duration cardAnimDuration;
 
-  final DocumentReference<DynaMap> game;
-
   @override
   Widget build(BuildContext context) {
+    final seat = (data['players'] as List).indexOf(uid);
+    final pair = pairForSeat(seat);
+    final opponents = otherPair(pair);
+    final myTurn = seatToPlay(data['turn'], data['round']) == seat;
     return Stack(
-      alignment: Alignment.center,
       children: [
-        Hand(userState: userState, snapshot: snapshot, cardSize: cardSize, playCard: playCard),
-        PlayBoard(),
+        const PlayBoard(),
         ...[
-          BoardCards(
-            cardAnimDuration: cardAnimDuration,
-            snapshot: game.snapshots(),
-            turnKey: userState.turnKey,
-            round: userState.round,
+          TakenCards(data: data, pair: pair),
+          OpponentHands(data: data, uid: uid),
+          BoardCards(data: data, seat: seat, pair: pair, cardAnimDuration: cardAnimDuration),
+          Align(
+            alignment: Alignment.bottomLeft,
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Scoreboard(
+                ours: data['${pair}Score'] as int? ?? 0,
+                theirs: data['${opponents}Score'] as int? ?? 0,
+                target: data['targetScore'] as int? ?? 21,
+              ),
+            ),
           ),
-          OpponentHands(game: game, userState: userState, cardSize: cardSize),
-          TakenCards(
-            snapshot: game.snapshots(),
-            pair: userState.pair,
-            oppositePair: userState.oppositePair,
-            cardSize: cardSize,
+          ScopaBanner(
+            ourScope: data['${pair}Scope'] as int? ?? 0,
+            theirScope: data['${opponents}Scope'] as int? ?? 0,
           ),
-        ].map((e) => IgnorePointer(ignoring: true, child: e))
+        ].map((e) => IgnorePointer(child: e)),
+        Hand(cards: hand, enabled: myTurn && data['pending'] == null, playCard: playCard),
       ],
     );
   }

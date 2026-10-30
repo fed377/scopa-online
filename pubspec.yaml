@@ -1,5 +1,5 @@
 name: scopa
-description: "A new Flutter project."
+description: "Online 4-player Scopone, built on Firebase."
 publish_to: "none"
 version: 1.0.0+1
 
@@ -9,19 +9,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8
   firebase_core: ^3.15.2
   firebase_auth: ^5.7.0
   cloud_firestore: ^5.6.12
-  google_fonts: ^6.2.1
-  flutter_staggered_animations: ^1.1.1
-  google_sign_in: ^7.1.1
   cached_network_image: ^3.4.1
   cached_network_image_platform_interface: ^4.1.1
-  web: ^1.1.1
-  glass: ^2.0.0+2
-  blobs: ^2.0.0
-  smooth_corner: ^1.1.1
 
 dev_dependencies:
   flutter_test:
@@ -32,4 +24,21 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/
+    - assets/back_card.png
+    - assets/club_black.png
+    - assets/diamond_red.png
+    - assets/heart_red.png
+    - assets/spade_black.png
+
+  fonts:
+    - family: Nunito
+      fonts:
+        - asset: assets/fonts/Nunito-Regular.ttf
+        - asset: assets/fonts/Nunito-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Nunito-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Nunito-ExtraBold.ttf
+          weight: 800
+        - asset: assets/fonts/Nunito-Black.ttf
+          weight: 900

@@ -1,20 +1,8 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
+/// The signed-in player.
 class UserState {
-  bool dealer;
-  String status;
-  late DocumentReference<Map<String, dynamic>> currGame;
-  String uid = 'null';
-  int turn = 0;
-  late int turnKey;
-  late String pair;
-  get oppositePair => pair == 'firstPair' ? 'secondPair' : 'firstPair';
-  int cardsGained = 0;
-  int scope = 0;
-  int round = 0;
-  int get playKey => (turnKey - round) % 4;
-  late String nickname;
-  late String imgUrl;
-  List<dynamic> users = [];
-  UserState(this.dealer, this.status);
+  const UserState({required this.uid, required this.nickname, required this.imgUrl});
+
+  final String uid;
+  final String nickname;
+  final String imgUrl;
 }

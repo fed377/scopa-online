@@ -1,51 +1,27 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:scopa/card_arc.dart';
-import 'package:scopa/main_title.dart';
+import 'package:scopa/theme.dart';
 
+/// The sign-in button shown under the title before the player signs in.
 class SignInMenu extends StatelessWidget {
-  const SignInMenu({
-    super.key,
-    required this.signIn,
-  });
+  const SignInMenu({super.key, required this.signIn, required this.busy});
 
   final Future<void> Function() signIn;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: SizedBox(
-        width: 600,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            MainTitle(),
-            Hero(tag: 'arc', child: CardArc()),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: Color.fromARGB(255, 0, 136, 255),
-                foregroundColor: Colors.white,
-                padding: EdgeInsets.symmetric(horizontal: 32, vertical: 25),
-                textStyle: TextStyle(fontSize: 20),
-              ),
-              onPressed: signIn,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(2.0),
-                    child: Icon(Icons.account_circle_rounded),
-                  ),
-                  Text('Sign in with Google'),
-                ],
-              ),
-            ),
-          ],
-        ),
+    return FilledButton.icon(
+      style: FilledButton.styleFrom(
+        backgroundColor: const Color(0xFF0088FF),
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 22),
+        textStyle: const TextStyle(fontFamily: fontFamily, fontSize: 18, fontWeight: FontWeight.w800),
       ),
+      onPressed: busy ? null : signIn,
+      icon: busy
+          ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2.5))
+          : const Icon(Icons.account_circle_rounded),
+      label: const Text('Sign in with Google'),
     );
   }
 }

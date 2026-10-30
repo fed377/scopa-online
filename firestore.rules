@@ -1,0 +1,98 @@
+rules_version = '2';
+
+// Game logic runs on the clients, so these rules keep each player's hand
+// private and stop outsiders from touching a game; they cannot fully prevent a
+// player from cheating in a game they are part of.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    match /games/{gameId} {
+      function isMember() {
+        return request.auth.uid in resource.data.players;
+      }
+
+      // Members may keep the player list as is or remove themselves.
+      function keepsPlayers() {
+        return request.resource.data.players == resource.data.players
+          || request.resource.data.players == resource.data.players.removeAll([request.auth.uid]);
+      }
+
+      function isJoining() {
+        return resource.data.status == 'waiting'
+          && resource.data.players.size() < 4
+          && request.resource.data.players == resource.data.players.concat([request.auth.uid])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['players', 'nicknames', 'images']);
+      }
+
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.status == 'waiting'
+        && request.resource.data.privacy in ['public', 'private']
+        && (request.resource.data.players == [request.auth.uid]
+          || request.resource.data.players == [request.auth.uid, 'bot1', 'bot2', 'bot3']);
+      allow update: if signedIn() && ((isMember() && keepsPlayers()) || isJoining());
+      allow delete: if false;
+
+      match /hands/{playerId} {
+        function game() {
+          return get(/databases/$(database)/documents/games/$(gameId)).data;
+        }
+
+        function isHost() {
+          return game().players[0] == request.auth.uid;
+        }
+
+        function isBot() {
+          return playerId in ['bot1', 'bot2', 'bot3'];
+        }
+
+        function isDeal() {
+          return isHost()
+            && playerId in game().players
+            && request.resource.data.cards.size() == 10;
+        }
+
+        function removesOneCard() {
+          return request.resource.data.cards.size() == resource.data.cards.size() - 1
+            && resource.data.cards.hasAll(request.resource.data.cards);
+        }
+
+        allow read: if signedIn() && (request.auth.uid == playerId || (isBot() && isHost()));
+        allow create: if signedIn() && isDeal();
+        allow update: if signedIn()
+          && (isDeal() || ((request.auth.uid == playerId || (isBot() && isHost())) && removesOneCard()));
+        allow delete: if false;
+      }
+    }
+
+    // Each player writes only their own entry, once per match.
+    match /leaderboard/{userId} {
+      function validEntry() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['name', 'totalPoints', 'gamesPlayed', 'wins', 'lastGameId'])
+          && d.name is string && d.name.size() <= 100
+          && d.totalPoints is int
+          && d.gamesPlayed is int
+          && d.wins is int
+          && d.lastGameId is string;
+      }
+
+      allow read: if signedIn();
+      allow create: if signedIn() && request.auth.uid == userId && validEntry()
+        && request.resource.data.gamesPlayed == 1
+        && request.resource.data.wins <= 1
+        && request.resource.data.totalPoints >= 0
+        && request.resource.data.totalPoints <= 100;
+      allow update: if signedIn() && request.auth.uid == userId && validEntry()
+        && request.resource.data.gamesPlayed == resource.data.gamesPlayed + 1
+        && request.resource.data.wins - resource.data.get('wins', 0) in [0, 1]
+        && request.resource.data.totalPoints >= resource.data.totalPoints
+        && request.resource.data.totalPoints <= resource.data.totalPoints + 100
+        && request.resource.data.lastGameId != resource.data.get('lastGameId', '');
+      allow delete: if false;
+    }
+  }
+}
